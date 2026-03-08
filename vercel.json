@@ -4,6 +4,10 @@
     {
       "source": "/ai-town/:match*",
       "destination": "/:match*"
+    },
+    {
+      "source": "/(.*)",
+      "destination": "/index.html"
     }
   ]
 }
