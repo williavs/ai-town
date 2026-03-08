@@ -17,27 +17,45 @@ crons.interval('restart dead worlds', { seconds: 60 }, internal.world.restartDea
 
 crons.interval('fetch HN stories', { minutes: 30 }, internal.hn.fetchTopStories);
 
-crons.daily('vacuum old entries', { hourUTC: 4, minuteUTC: 20 }, internal.crons.vacuumOldEntries);
+crons.interval('vacuum old entries', { hours: 6 }, internal.crons.vacuumOldEntries);
 
 export default crons;
 
 const TablesToVacuum: TableNames[] = [
-  // Un-comment this to also clean out old conversations.
-  // 'conversationMembers', 'conversations', 'messages',
-
-  // Inputs aren't useful unless you're trying to replay history.
-  // If you want to support that, you should add a snapshot table, so you can
-  // replay from a certain time period. Or stop vacuuming inputs and replay from
-  // the beginning of time
   'inputs',
-
-  // We can keep memories without their embeddings for inspection, but we won't
-  // retrieve them when searching memories via vector search.
   'memories',
-  // We can vacuum fewer tables without serious consequences, but the only
-  // one that will cause issues over time is having >>100k vectors.
   'memoryEmbeddings',
+  'embeddingsCache',
+  'messages',
+  'archivedConversations',
+  'archivedPlayers',
+  'archivedAgents',
+  'participatedTogether',
 ];
+
+// One-shot purge: run from Convex dashboard to free space immediately.
+// Deletes everything older than 1 hour across all vacuumable tables.
+export const purgeNow = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const before = Date.now() - 60 * 60 * 1000; // 1 hour ago
+    for (const tableName of TablesToVacuum) {
+      const exists = await ctx.db
+        .query(tableName)
+        .withIndex('by_creation_time', (q) => q.lt('_creationTime', before))
+        .first();
+      if (exists) {
+        console.log(`Purging ${tableName}...`);
+        await ctx.scheduler.runAfter(0, internal.crons.vacuumTable, {
+          tableName,
+          before,
+          cursor: null,
+          soFar: 0,
+        });
+      }
+    }
+  },
+});
 
 export const vacuumOldEntries = internalMutation({
   args: {},

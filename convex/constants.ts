@@ -58,8 +58,8 @@ export const MESSAGE_COOLDOWN = 2000;
 // Don't run a turn of the agent more than once a second.
 export const AGENT_WAKEUP_THRESHOLD = 1000;
 
-// How old we let memories be before we vacuum them
-export const VACUUM_MAX_AGE = 2 * 7 * 24 * 60 * 60 * 1000;
+// How old we let data be before we vacuum it (3 days for free tier)
+export const VACUUM_MAX_AGE = 3 * 24 * 60 * 60 * 1000;
 export const DELETE_BATCH_SIZE = 64;
 
 export const HUMAN_IDLE_TOO_LONG = 5 * 60 * 1000;
