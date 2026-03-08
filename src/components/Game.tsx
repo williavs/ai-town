@@ -42,14 +42,26 @@ export default function Game({ embed }: { embed?: boolean }) {
   return (
     <>
       {SHOW_DEBUG_UI && <DebugTimeManager timeManager={timeManager} width={200} height={100} />}
-      <div className={`mx-auto w-full max-w grid grid-rows-[240px_1fr] lg:grid-rows-[1fr] lg:grid-cols-[1fr_auto] lg:grow min-h-[480px] ${embed ? 'h-full' : 'max-w-[1400px] game-frame'}`}>
+      <div className={`mx-auto w-full max-w grid grid-rows-[240px_1fr] lg:grid-rows-[1fr] ${embed ? 'lg:grid-cols-[auto_1fr] h-full' : 'lg:grid-cols-[1fr_auto] max-w-[1400px] game-frame'} lg:grow min-h-[480px]`}>
+        {/* Details panel - left in embed, right in standalone */}
+        <div
+          className={`flex flex-col overflow-y-auto shrink-0 px-4 py-6 sm:px-6 lg:w-96 xl:pr-6 bg-brown-800 text-brown-100 ${embed ? 'order-first border-b-8 sm:border-b-0 sm:border-r-8 border-brown-900' : 'border-t-8 sm:border-t-0 sm:border-l-8 border-brown-900'}`}
+          ref={scrollViewRef}
+        >
+          <PlayerDetails
+            worldId={worldId}
+            engineId={engineId}
+            game={game}
+            playerId={selectedElement?.id}
+            setSelectedElement={setSelectedElement}
+            scrollViewRef={scrollViewRef}
+          />
+        </div>
         {/* Game area */}
         <div className="relative overflow-hidden bg-brown-900" ref={gameWrapperRef}>
           <div className="absolute inset-0">
             <div className="container">
               <Stage width={width} height={height} options={{ backgroundColor: 0x7ab5ff }}>
-                {/* Re-propagate context because contexts are not shared between renderers.
-https://github.com/michalochman/react-pixi-fiber/issues/145#issuecomment-531549215 */}
                 <ConvexProvider client={convex}>
                   <PixiGame
                     game={game}
@@ -64,20 +76,6 @@ https://github.com/michalochman/react-pixi-fiber/issues/145#issuecomment-5315492
               </Stage>
             </div>
           </div>
-        </div>
-        {/* Right column area */}
-        <div
-          className="flex flex-col overflow-y-auto shrink-0 px-4 py-6 sm:px-6 lg:w-96 xl:pr-6 border-t-8 sm:border-t-0 sm:border-l-8 border-brown-900  bg-brown-800 text-brown-100"
-          ref={scrollViewRef}
-        >
-          <PlayerDetails
-            worldId={worldId}
-            engineId={engineId}
-            game={game}
-            playerId={selectedElement?.id}
-            setSelectedElement={setSelectedElement}
-            scrollViewRef={scrollViewRef}
-          />
         </div>
       </div>
     </>
