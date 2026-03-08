@@ -76,3 +76,6 @@ export const ENGINE_ACTION_DURATION = 30000;
 export const MAX_PATHFINDS_PER_STEP = 16;
 
 export const DEFAULT_NAME = 'Me';
+
+export const NAME_MAX_LENGTH = 16;
+export const NAME_PATTERN = /^[a-zA-Z0-9 ]+$/;

@@ -9,6 +9,7 @@ import { useSendInput } from '../hooks/sendInput';
 import { Player } from '../../convex/aiTown/player';
 import { GameId } from '../../convex/aiTown/ids';
 import { ServerGame } from '../hooks/serverGame';
+import { useSessionId } from '../hooks/useSessionId';
 
 export default function PlayerDetails({
   worldId,
@@ -25,7 +26,8 @@ export default function PlayerDetails({
   setSelectedElement: SelectElement;
   scrollViewRef: React.RefObject<HTMLDivElement>;
 }) {
-  const humanTokenIdentifier = useQuery(api.world.userStatus, { worldId });
+  const sessionId = useSessionId();
+  const humanTokenIdentifier = useQuery(api.world.userStatus, { worldId, sessionId });
 
   const players = [...game.world.players.values()];
   const humanPlayer = players.find((p) => p.human === humanTokenIdentifier);
