@@ -4,7 +4,9 @@ const OPENAI_EMBEDDING_DIMENSION = 1536;
 const TOGETHER_EMBEDDING_DIMENSION = 768;
 const OLLAMA_EMBEDDING_DIMENSION = 1024;
 
-export const EMBEDDING_DIMENSION: number = OLLAMA_EMBEDDING_DIMENSION;
+// Set to match your embedding model's output dimension.
+// OpenAI text-embedding-3-small = 1536, Together m2-bert = 768, Ollama mxbai = 1024
+export const EMBEDDING_DIMENSION: number = OPENAI_EMBEDDING_DIMENSION;
 
 export function detectMismatchedLLMProvider() {
   switch (EMBEDDING_DIMENSION) {

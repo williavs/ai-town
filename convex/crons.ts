@@ -15,6 +15,8 @@ crons.interval(
 
 crons.interval('restart dead worlds', { seconds: 60 }, internal.world.restartDeadWorlds);
 
+crons.interval('fetch HN stories', { minutes: 30 }, internal.hn.fetchTopStories);
+
 crons.daily('vacuum old entries', { hourUTC: 4, minuteUTC: 20 }, internal.crons.vacuumOldEntries);
 
 export default crons;

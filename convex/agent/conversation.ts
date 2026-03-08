@@ -10,6 +10,19 @@ import { NUM_MEMORIES_TO_SEARCH } from '../constants';
 
 const selfInternal = internal.agent.conversation;
 
+async function hnContextPrompt(ctx: ActionCtx): Promise<string[]> {
+  const stories = await ctx.runQuery(internal.hn.getTopStories, { limit: 3 });
+  if (stories.length === 0) return [];
+  const prompt = ['Currently trending on Hacker News:'];
+  for (const story of stories) {
+    prompt.push(`  - "${story.title}" (${story.score} points, ${story.descendants} comments)`);
+  }
+  prompt.push(
+    'You are a tech person who reads Hacker News. Naturally weave these topics into your conversation when relevant. React based on your personality.',
+  );
+  return prompt;
+}
+
 export async function startConversationMessage(
   ctx: ActionCtx,
   worldId: Id<'worlds'>,
@@ -41,12 +54,14 @@ export async function startConversationMessage(
   const memoryWithOtherPlayer = memories.find(
     (m) => m.data.type === 'conversation' && m.data.playerIds.includes(otherPlayerId),
   );
+  const hnContext = await hnContextPrompt(ctx);
   const prompt = [
     `You are ${player.name}, and you just started a conversation with ${otherPlayer.name}.`,
   ];
   prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
   prompt.push(...previousConversationPrompt(otherPlayer, lastConversation));
   prompt.push(...relatedMemoriesPrompt(memories));
+  prompt.push(...hnContext);
   if (memoryWithOtherPlayer) {
     prompt.push(
       `Be sure to include some detail or question about a previous conversation in your greeting.`,
@@ -98,12 +113,14 @@ export async function continueConversationMessage(
     `What do you think about ${otherPlayer.name}?`,
   );
   const memories = await memory.searchMemories(ctx, player.id as GameId<'players'>, embedding, 3);
+  const hnContext = await hnContextPrompt(ctx);
   const prompt = [
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
     `The conversation started at ${started.toLocaleString()}. It's now ${now.toLocaleString()}.`,
   ];
   prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
   prompt.push(...relatedMemoriesPrompt(memories));
+  prompt.push(...hnContext);
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
     `DO NOT greet them again. Do NOT use the word "Hey" too often. Your response should be brief and within 200 characters.`,
