@@ -9,13 +9,13 @@ const crons = cronJobs();
 
 crons.interval(
   'stop inactive worlds',
-  { seconds: IDLE_WORLD_TIMEOUT / 1000 },
+  { minutes: 10 },
   internal.world.stopInactiveWorlds,
 );
 
-crons.interval('restart dead worlds', { seconds: 60 }, internal.world.restartDeadWorlds);
+crons.interval('restart dead worlds', { minutes: 5 }, internal.world.restartDeadWorlds);
 
-crons.interval('fetch HN stories', { minutes: 30 }, internal.hn.fetchTopStories);
+crons.interval('fetch HN stories', { hours: 2 }, internal.hn.fetchTopStories);
 
 crons.interval('vacuum old entries', { hours: 6 }, internal.crons.vacuumOldEntries);
 
@@ -53,6 +53,25 @@ export const purgeNow = internalMutation({
           soFar: 0,
         });
       }
+    }
+  },
+});
+
+// Wipe embeddingsCache completely (it's excluded from wipeAllTables).
+export const purgeEmbeddingsCache = internalMutation({
+  args: {},
+  handler: async (ctx) => {
+    const results = await ctx.db
+      .query('embeddingsCache')
+      .paginate({ cursor: null, numItems: DELETE_BATCH_SIZE });
+    for (const row of results.page) {
+      await ctx.db.delete(row._id);
+    }
+    if (!results.isDone) {
+      console.log(`Deleted ${results.page.length} embeddingsCache entries, continuing...`);
+      await ctx.scheduler.runAfter(0, internal.crons.purgeEmbeddingsCache, {});
+    } else {
+      console.log(`Finished purging embeddingsCache (${results.page.length} final batch)`);
     }
   },
 });
