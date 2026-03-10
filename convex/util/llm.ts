@@ -181,12 +181,12 @@ export async function chatCompletion(
       if (!choice) {
         throw new Error('No choices in LLM response: ' + text.slice(0, 500));
       }
-      const content = choice.message?.content
-        ?? choice.message?.reasoning
-        ?? '';
+      let content = choice.message?.content ?? '';
       if (typeof content !== 'string') {
         throw new Error('Unexpected result from LLM: ' + text.slice(0, 500));
       }
+      // Strip reasoning/thinking tags that some models (e.g. Nemotron) leak into content.
+      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
       console.log(content);
       return content;
     }
