@@ -60,7 +60,7 @@ export default function Game({ embed }: { embed?: boolean }) {
         </div>
         {/* Game area */}
         <div className="relative overflow-hidden bg-brown-900" ref={gameWrapperRef}>
-          <HnHud />
+          <HnHud worldId={worldId} />
           <div className="absolute inset-0">
             <div className="container">
               <Stage width={width} height={height} options={{ backgroundColor: 0x7ab5ff }}>

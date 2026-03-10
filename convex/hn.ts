@@ -75,3 +75,63 @@ export const listTopStories = query({
     return await ctx.db.query('hnStories').order('desc').take(5);
   },
 });
+
+export const storyDiscussions = query({
+  args: { worldId: v.id('worlds') },
+  handler: async (ctx, { worldId }) => {
+    const stories = await ctx.db.query('hnStories').order('desc').take(5);
+    if (stories.length === 0) return [];
+
+    // Get recent messages (last 200) and match keywords from story titles.
+    const messages = await ctx.db
+      .query('messages')
+      .withIndex('conversationId', (q) => q.eq('worldId', worldId))
+      .order('desc')
+      .take(200);
+
+    // Build keyword sets per story (words 4+ chars, lowercased).
+    const storyKeywords = stories.map((s) => {
+      const words = s.title
+        .toLowerCase()
+        .split(/\W+/)
+        .filter((w) => w.length >= 4);
+      return { story: s, words };
+    });
+
+    // Match messages to stories by keyword overlap.
+    const grouped: Record<
+      number,
+      { authorName: string; text: string; _creationTime: number }[]
+    > = {};
+    for (const msg of messages) {
+      if (!msg.text || msg.text.length < 10) continue;
+      const lower = msg.text.toLowerCase();
+      for (const { story, words } of storyKeywords) {
+        if (words.some((w) => lower.includes(w))) {
+          if (!grouped[story.hnId]) grouped[story.hnId] = [];
+          if (grouped[story.hnId].length < 4) {
+            const desc = await ctx.db
+              .query('playerDescriptions')
+              .withIndex('worldId', (q) =>
+                q.eq('worldId', worldId).eq('playerId', msg.author),
+              )
+              .first();
+            grouped[story.hnId].push({
+              authorName: desc?.name ?? msg.author,
+              text: msg.text.slice(0, 200),
+              _creationTime: msg._creationTime,
+            });
+          }
+          break;
+        }
+      }
+    }
+
+    return stories.map((s) => ({
+      ...s,
+      discussions: (grouped[s.hnId] ?? []).sort(
+        (a, b) => a._creationTime - b._creationTime,
+      ),
+    }));
+  },
+});
