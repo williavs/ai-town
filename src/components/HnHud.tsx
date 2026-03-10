@@ -3,8 +3,12 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
+type Tab = 'trending' | 'discussions';
+
 export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
-  const [tab, setTab] = useState<'trending' | 'discussions'>('trending');
+  const [tab, setTab] = useState<Tab>('trending');
+  const [expandedStory, setExpandedStory] = useState<number | null>(null);
+  const [expandedConvo, setExpandedConvo] = useState<string | null>(null);
   const stories = useQuery(api.hn.listTopStories);
   const discussions = useQuery(
     api.hn.storyDiscussions,
@@ -18,92 +22,162 @@ export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
   return (
     <div className="absolute top-3 right-3 z-10 pointer-events-auto">
       <div
-        className="bg-black/70 backdrop-blur-sm rounded-lg px-3 py-2 max-w-[320px]"
-        style={{ border: '1px solid rgba(255,255,255,0.1)' }}
+        className="bg-black/70 backdrop-blur-sm rounded-lg overflow-hidden"
+        style={{ border: '1px solid rgba(255,255,255,0.1)', maxWidth: 340, minWidth: 260 }}
       >
-        {/* Tabs */}
-        <div className="flex gap-2 mb-1.5">
-          <button
-            onClick={() => setTab('trending')}
-            className={`text-[9px] uppercase tracking-[1.5px] font-bold transition-colors ${
-              tab === 'trending'
-                ? 'text-orange-400'
-                : 'text-white/30 hover:text-white/50'
-            }`}
-          >
-            Trending
-          </button>
-          <span className="text-white/15 text-[9px]">|</span>
-          <button
-            onClick={() => setTab('discussions')}
-            className={`text-[9px] uppercase tracking-[1.5px] font-bold transition-colors ${
-              tab === 'discussions'
-                ? 'text-orange-400'
-                : 'text-white/30 hover:text-white/50'
-            }`}
-          >
-            Discussions
-          </button>
+        {/* Tab bar */}
+        <div className="flex border-b border-white/10 px-3 pt-2 pb-1 gap-3">
+          {(['trending', 'discussions'] as Tab[]).map((t) => (
+            <button
+              key={t}
+              onClick={() => { setTab(t); setExpandedStory(null); setExpandedConvo(null); }}
+              className={`text-[9px] uppercase tracking-[1.5px] font-bold pb-1 transition-colors border-b-2 ${
+                tab === t
+                  ? 'text-orange-400 border-orange-400'
+                  : 'text-white/30 border-transparent hover:text-white/50'
+              }`}
+            >
+              {t}
+            </button>
+          ))}
         </div>
 
-        {tab === 'trending' && (
-          <div className="space-y-1">
-            {stories.map((story) => (
+        <div className="px-3 py-2">
+          {/* Trending tab */}
+          {tab === 'trending' && (
+            <div className="space-y-1.5">
+              {stories.map((story) => (
+                <a
+                  key={story.hnId}
+                  href={hnLink(story.hnId)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="block group"
+                >
+                  <div className="text-[11px] text-white/80 group-hover:text-orange-300 leading-tight transition-colors">
+                    {story.title}
+                  </div>
+                  <div className="text-[9px] text-white/30 mt-0.5">
+                    {story.score} pts &middot; {story.descendants} comments
+                  </div>
+                </a>
+              ))}
+              <div className="text-[8px] text-white/20 mt-1">
+                AI residents discuss these topics
+              </div>
+            </div>
+          )}
+
+          {/* Discussions tab */}
+          {tab === 'discussions' && discussions && (
+            <div className="space-y-1">
+              {discussions.map((story) => {
+                const isOpen = expandedStory === story.hnId;
+                const convoCount = story.conversations.length;
+                return (
+                  <div key={story.hnId}>
+                    {/* Story header - click to expand */}
+                    <button
+                      onClick={() => {
+                        setExpandedStory(isOpen ? null : story.hnId);
+                        setExpandedConvo(null);
+                      }}
+                      className="w-full text-left group"
+                    >
+                      <div className="flex items-start gap-1.5">
+                        <span className="text-[9px] text-white/20 mt-px shrink-0">
+                          {isOpen ? '▾' : '▸'}
+                        </span>
+                        <div className="flex-1 min-w-0">
+                          <div className="text-[10px] text-orange-400/80 group-hover:text-orange-300 font-bold leading-tight transition-colors">
+                            {story.title}
+                          </div>
+                          <div className="text-[8px] text-white/25 mt-0.5">
+                            {convoCount > 0
+                              ? `${convoCount} conversation${convoCount > 1 ? 's' : ''}`
+                              : 'no discussions yet'}
+                          </div>
+                        </div>
+                      </div>
+                    </button>
+
+                    {/* Expanded: conversation list */}
+                    {isOpen && convoCount > 0 && (
+                      <div className="ml-3 mt-1 space-y-1 border-l border-white/10 pl-2">
+                        {story.conversations.map((convo, ci) => {
+                          const isConvoOpen = expandedConvo === convo.conversationId;
+                          const participants = [
+                            ...new Set(convo.messages.map((m) => m.authorName)),
+                          ];
+                          const preview = convo.messages[0]?.text.slice(0, 60) ?? '';
+                          return (
+                            <div key={convo.conversationId}>
+                              {/* Conversation header */}
+                              <button
+                                onClick={() =>
+                                  setExpandedConvo(isConvoOpen ? null : convo.conversationId)
+                                }
+                                className="w-full text-left group"
+                              >
+                                <div className="flex items-start gap-1">
+                                  <span className="text-[8px] text-white/15 mt-px shrink-0">
+                                    {isConvoOpen ? '▾' : '▸'}
+                                  </span>
+                                  <div className="flex-1 min-w-0">
+                                    <div className="text-[9px] text-white/50 font-medium">
+                                      {participants.join(' & ')}
+                                    </div>
+                                    {!isConvoOpen && (
+                                      <div className="text-[9px] text-white/25 truncate">
+                                        {preview}...
+                                      </div>
+                                    )}
+                                  </div>
+                                  <span className="text-[8px] text-white/15 shrink-0">
+                                    {convo.messages.length} msg{convo.messages.length > 1 ? 's' : ''}
+                                  </span>
+                                </div>
+                              </button>
+
+                              {/* Expanded: full conversation */}
+                              {isConvoOpen && (
+                                <div className="mt-1 ml-2 space-y-1 max-h-[200px] overflow-y-auto">
+                                  {convo.messages.map((msg, mi) => (
+                                    <div key={mi} className="text-[10px] leading-snug">
+                                      <span className="text-orange-400/60 font-medium">
+                                        {msg.authorName}
+                                      </span>
+                                      <span className="text-white/60 ml-1">{msg.text}</span>
+                                    </div>
+                                  ))}
+                                </div>
+                              )}
+                            </div>
+                          );
+                        })}
+                      </div>
+                    )}
+
+                    {isOpen && convoCount === 0 && (
+                      <div className="ml-3 mt-1 text-[9px] text-white/20 pl-2 border-l border-white/10">
+                        Agents haven't discussed this yet
+                      </div>
+                    )}
+                  </div>
+                );
+              })}
+
               <a
-                key={story.hnId}
-                href={hnLink(story.hnId)}
+                href="https://news.ycombinator.com"
                 target="_blank"
                 rel="noopener noreferrer"
-                className="block group"
+                className="block text-[8px] text-white/15 hover:text-white/30 mt-2 transition-colors"
               >
-                <div className="text-[11px] text-white/80 group-hover:text-orange-300 leading-tight transition-colors">
-                  {story.title}
-                </div>
-                <div className="text-[9px] text-white/30 mt-0.5">
-                  {story.score} pts &middot; {story.descendants} comments
-                </div>
+                via Hacker News
               </a>
-            ))}
-            <div className="text-[8px] text-white/20 mt-1.5">
-              AI residents discuss these topics
             </div>
-          </div>
-        )}
-
-        {tab === 'discussions' && (
-          <div className="space-y-2 max-h-[300px] overflow-y-auto">
-            {discussions && discussions.length > 0 ? (
-              discussions.map((story) => (
-                <div key={story.hnId}>
-                  <a
-                    href={hnLink(story.hnId)}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="text-[10px] text-orange-400/80 hover:text-orange-300 font-bold leading-tight block"
-                  >
-                    {story.title}
-                  </a>
-                  {story.discussions.length > 0 ? (
-                    <div className="mt-0.5 space-y-0.5">
-                      {story.discussions.map((msg, i) => (
-                        <div key={i} className="text-[10px] leading-tight">
-                          <span className="text-white/50">{msg.authorName}:</span>{' '}
-                          <span className="text-white/70">{msg.text}</span>
-                        </div>
-                      ))}
-                    </div>
-                  ) : (
-                    <div className="text-[9px] text-white/20 mt-0.5">
-                      No discussions yet
-                    </div>
-                  )}
-                </div>
-              ))
-            ) : (
-              <div className="text-[9px] text-white/30">Loading discussions...</div>
-            )}
-          </div>
-        )}
+          )}
+        </div>
       </div>
     </div>
   );

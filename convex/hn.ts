@@ -82,12 +82,19 @@ export const storyDiscussions = query({
     const stories = await ctx.db.query('hnStories').order('desc').take(5);
     if (stories.length === 0) return [];
 
-    // Get recent messages (last 200) and match keywords from story titles.
+    // Get recent messages and group by conversation.
     const messages = await ctx.db
       .query('messages')
       .withIndex('conversationId', (q) => q.eq('worldId', worldId))
       .order('desc')
-      .take(200);
+      .take(300);
+
+    // Group messages by conversationId.
+    const convos: Record<string, typeof messages> = {};
+    for (const msg of messages) {
+      if (!convos[msg.conversationId]) convos[msg.conversationId] = [];
+      convos[msg.conversationId].push(msg);
+    }
 
     // Build keyword sets per story (words 4+ chars, lowercased).
     const storyKeywords = stories.map((s) => {
@@ -98,29 +105,49 @@ export const storyDiscussions = query({
       return { story: s, words };
     });
 
-    // Match messages to stories by keyword overlap.
-    const grouped: Record<
-      number,
-      { authorName: string; text: string; _creationTime: number }[]
-    > = {};
-    for (const msg of messages) {
-      if (!msg.text || msg.text.length < 10) continue;
-      const lower = msg.text.toLowerCase();
+    // Resolve player names (cache to avoid repeated lookups).
+    const nameCache: Record<string, string> = {};
+    async function getName(playerId: string) {
+      if (nameCache[playerId]) return nameCache[playerId];
+      const desc = await ctx.db
+        .query('playerDescriptions')
+        .withIndex('worldId', (q) =>
+          q.eq('worldId', worldId).eq('playerId', playerId),
+        )
+        .first();
+      nameCache[playerId] = desc?.name ?? playerId;
+      return nameCache[playerId];
+    }
+
+    // Match entire conversations to stories by keyword overlap.
+    type ConvoThread = {
+      conversationId: string;
+      messages: { authorName: string; text: string; _creationTime: number }[];
+    };
+    const grouped: Record<number, ConvoThread[]> = {};
+
+    for (const [convoId, msgs] of Object.entries(convos)) {
+      // Concatenate all messages to check for topic keywords.
+      const allText = msgs.map((m) => m.text).join(' ').toLowerCase();
       for (const { story, words } of storyKeywords) {
-        if (words.some((w) => lower.includes(w))) {
+        if (words.some((w) => allText.includes(w))) {
           if (!grouped[story.hnId]) grouped[story.hnId] = [];
-          if (grouped[story.hnId].length < 4) {
-            const desc = await ctx.db
-              .query('playerDescriptions')
-              .withIndex('worldId', (q) =>
-                q.eq('worldId', worldId).eq('playerId', msg.author),
-              )
-              .first();
-            grouped[story.hnId].push({
-              authorName: desc?.name ?? msg.author,
-              text: msg.text.slice(0, 200),
-              _creationTime: msg._creationTime,
-            });
+          if (grouped[story.hnId].length < 5) {
+            const sorted = [...msgs].sort(
+              (a, b) => a._creationTime - b._creationTime,
+            );
+            const thread: ConvoThread = {
+              conversationId: convoId,
+              messages: [],
+            };
+            for (const m of sorted) {
+              thread.messages.push({
+                authorName: await getName(m.author),
+                text: m.text,
+                _creationTime: m._creationTime,
+              });
+            }
+            grouped[story.hnId].push(thread);
           }
           break;
         }
@@ -128,10 +155,11 @@ export const storyDiscussions = query({
     }
 
     return stories.map((s) => ({
-      ...s,
-      discussions: (grouped[s.hnId] ?? []).sort(
-        (a, b) => a._creationTime - b._creationTime,
-      ),
+      hnId: s.hnId,
+      title: s.title,
+      score: s.score,
+      descendants: s.descendants,
+      conversations: grouped[s.hnId] ?? [],
     }));
   },
 });
