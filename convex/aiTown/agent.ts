@@ -54,6 +54,25 @@ export class Agent {
     if (!player) {
       throw new Error(`Invalid player ID ${this.playerId}`);
     }
+    const conversation = game.world.playerConversation(player);
+    const member = conversation?.participants.get(player.id);
+
+    // If a human invited us, drop whatever we're doing and accept immediately.
+    if (
+      this.inProgressOperation &&
+      conversation &&
+      member?.status.kind === 'invited'
+    ) {
+      const [otherPlayerId] = [...conversation.participants.entries()].find(
+        ([id]) => id !== player.id,
+      )!;
+      const otherPlayer = game.world.players.get(otherPlayerId)!;
+      if (otherPlayer.human) {
+        console.log(`Agent ${player.id} dropping operation to accept human invite`);
+        delete this.inProgressOperation;
+      }
+    }
+
     if (this.inProgressOperation) {
       if (now < this.inProgressOperation.started + ACTION_TIMEOUT) {
         // Wait on the operation to finish.
@@ -62,8 +81,6 @@ export class Agent {
       console.log(`Timing out ${JSON.stringify(this.inProgressOperation)}`);
       delete this.inProgressOperation;
     }
-    const conversation = game.world.playerConversation(player);
-    const member = conversation?.participants.get(player.id);
 
     const recentlyAttemptedInvite =
       this.lastInviteAttempt && now < this.lastInviteAttempt + CONVERSATION_COOLDOWN;
