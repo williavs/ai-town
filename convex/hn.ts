@@ -163,3 +163,58 @@ export const storyDiscussions = query({
     }));
   },
 });
+
+export const agentRelationships = query({
+  args: { worldId: v.id('worlds') },
+  handler: async (ctx, { worldId }) => {
+    // Get all participatedTogether records for this world.
+    const allPlayers = await ctx.db
+      .query('playerDescriptions')
+      .withIndex('worldId', (q) => q.eq('worldId', worldId))
+      .collect();
+
+    const nameMap: Record<string, string> = {};
+    for (const p of allPlayers) {
+      nameMap[p.playerId] = p.name;
+    }
+
+    // Count conversations between each pair.
+    const pairCounts: Record<string, { player1: string; player2: string; count: number; lastTalked: number }> = {};
+
+    for (const p of allPlayers) {
+      const history = await ctx.db
+        .query('participatedTogether')
+        .withIndex('playerHistory', (q) => q.eq('worldId', worldId).eq('player1', p.playerId))
+        .order('desc')
+        .take(100);
+
+      for (const record of history) {
+        // Normalize pair key so (A,B) and (B,A) are the same.
+        const key = [record.player1, record.player2].sort().join('|');
+        if (!pairCounts[key]) {
+          pairCounts[key] = {
+            player1: record.player1,
+            player2: record.player2,
+            count: 0,
+            lastTalked: 0,
+          };
+        }
+        pairCounts[key].count++;
+        pairCounts[key].lastTalked = Math.max(pairCounts[key].lastTalked, record.ended);
+      }
+    }
+
+    // Sort by count descending, take top 15.
+    const pairs = Object.values(pairCounts)
+      .sort((a, b) => b.count - a.count)
+      .slice(0, 15)
+      .map((p) => ({
+        name1: nameMap[p.player1] ?? p.player1,
+        name2: nameMap[p.player2] ?? p.player2,
+        count: p.count,
+        lastTalked: p.lastTalked,
+      }));
+
+    return pairs;
+  },
+});

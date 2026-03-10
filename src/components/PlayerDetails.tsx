@@ -57,7 +57,7 @@ export default function PlayerDetails({
 
   if (!playerId) {
     return (
-      <div className="h-full text-xl flex text-center items-center p-4">
+      <div className="h-full text-sm flex text-center items-center p-3">
         Click on an agent on the map to see chat history.
       </div>
     );
@@ -135,25 +135,25 @@ export default function PlayerDetails({
   const pendingSuffix = (s: string) => '';
   return (
     <>
-      <div className="flex gap-4">
+      <div className="flex gap-2">
         <div className="box w-3/4 sm:w-full mr-auto">
-          <h2 className="bg-brown-700 p-2 font-display text-2xl sm:text-4xl tracking-wider shadow-solid text-center">
+          <h2 className="bg-brown-700 p-1.5 font-display text-lg sm:text-xl tracking-wider shadow-solid text-center">
             {playerDescription?.name}
           </h2>
         </div>
         <a
-          className="button text-white shadow-solid text-2xl cursor-pointer pointer-events-auto"
+          className="button text-white shadow-solid text-lg cursor-pointer pointer-events-auto"
           onClick={() => setSelectedElement(undefined)}
         >
           <h2 className="h-full bg-clay-700">
-            <img className="w-4 h-4 sm:w-5 sm:h-5" src={closeImg} />
+            <img className="w-3.5 h-3.5 sm:w-4 sm:h-4" src={closeImg} />
           </h2>
         </a>
       </div>
       {canInvite && (
         <a
           className={
-            'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
+            'mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto' +
             pendingSuffix('startConversation')
           }
           onClick={onStartConversation}
@@ -164,14 +164,14 @@ export default function PlayerDetails({
         </a>
       )}
       {waitingForAccept && (
-        <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
+        <a className="mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto opacity-50">
           <div className="h-full bg-clay-700 text-center">
             <span>Waiting for accept...</span>
           </div>
         </a>
       )}
       {waitingForNearby && (
-        <a className="mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto opacity-50">
+        <a className="mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto opacity-50">
           <div className="h-full bg-clay-700 text-center">
             <span>Walking over...</span>
           </div>
@@ -180,7 +180,7 @@ export default function PlayerDetails({
       {inConversationWithMe && (
         <a
           className={
-            'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
+            'mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto' +
             pendingSuffix('leaveConversation')
           }
           onClick={onLeaveConversation}
@@ -194,7 +194,7 @@ export default function PlayerDetails({
         <>
           <a
             className={
-              'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
+              'mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto' +
               pendingSuffix('acceptInvite')
             }
             onClick={onAcceptInvite}
@@ -205,7 +205,7 @@ export default function PlayerDetails({
           </a>
           <a
             className={
-              'mt-6 button text-white shadow-solid text-xl cursor-pointer pointer-events-auto' +
+              'mt-3 button text-white shadow-solid text-sm cursor-pointer pointer-events-auto' +
               pendingSuffix('rejectInvite')
             }
             onClick={onRejectInvite}
@@ -217,14 +217,14 @@ export default function PlayerDetails({
         </>
       )}
       {!playerConversation && player.activity && player.activity.until > Date.now() && (
-        <div className="box flex-grow mt-6">
-          <h2 className="bg-brown-700 text-base sm:text-lg text-center">
+        <div className="box flex-grow mt-3">
+          <h2 className="bg-brown-700 text-xs sm:text-sm text-center">
             {player.activity.description}
           </h2>
         </div>
       )}
-      <div className="desc my-6">
-        <p className="leading-tight -m-4 bg-brown-700 text-base sm:text-sm">
+      <div className="desc my-3">
+        <p className="leading-tight -m-4 bg-brown-700 text-xs sm:text-xs">
           {!isMe && playerDescription?.description}
           {isMe && <i>This is you!</i>}
           {!isMe && inConversationWithMe && (
@@ -248,7 +248,7 @@ export default function PlayerDetails({
       {!playerConversation && previousConversation && (
         <>
           <div className="box flex-grow">
-            <h2 className="bg-brown-700 text-lg text-center">Previous conversation</h2>
+            <h2 className="bg-brown-700 text-xs text-center">Previous conversation</h2>
           </div>
           <Messages
             worldId={worldId}

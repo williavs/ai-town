@@ -3,7 +3,7 @@ import { useQuery } from 'convex/react';
 import { api } from '../../convex/_generated/api';
 import { Id } from '../../convex/_generated/dataModel';
 
-type Tab = 'trending' | 'discussions';
+type Tab = 'trending' | 'discussions' | 'social';
 
 export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
   const [tab, setTab] = useState<Tab>('trending');
@@ -14,10 +14,23 @@ export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
     api.hn.storyDiscussions,
     worldId ? { worldId } : 'skip',
   );
+  const relationships = useQuery(
+    api.hn.agentRelationships,
+    worldId ? { worldId } : 'skip',
+  );
 
   if (!stories || stories.length === 0) return null;
 
   const hnLink = (hnId: number) => `https://news.ycombinator.com/item?id=${hnId}`;
+
+  const timeAgo = (ts: number) => {
+    const mins = Math.floor((Date.now() - ts) / 60000);
+    if (mins < 1) return 'just now';
+    if (mins < 60) return `${mins}m ago`;
+    const hrs = Math.floor(mins / 60);
+    if (hrs < 24) return `${hrs}h ago`;
+    return `${Math.floor(hrs / 24)}d ago`;
+  };
 
   return (
     <div className="absolute top-3 right-3 z-10 pointer-events-auto">
@@ -27,7 +40,7 @@ export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
       >
         {/* Tab bar */}
         <div className="flex border-b border-white/10 px-3 pt-2 pb-1 gap-3">
-          {(['trending', 'discussions'] as Tab[]).map((t) => (
+          {(['trending', 'discussions', 'social'] as Tab[]).map((t) => (
             <button
               key={t}
               onClick={() => { setTab(t); setExpandedStory(null); setExpandedConvo(null); }}
@@ -175,6 +188,54 @@ export default function HnHud({ worldId }: { worldId?: Id<'worlds'> }) {
               >
                 via Hacker News
               </a>
+            </div>
+          )}
+
+          {/* Social tab - agent relationship map */}
+          {tab === 'social' && (
+            <div className="space-y-1">
+              {relationships && relationships.length > 0 ? (
+                <>
+                  {relationships.map((pair, i) => {
+                    const maxCount = relationships[0].count;
+                    const barWidth = Math.max(12, Math.round((pair.count / maxCount) * 100));
+                    return (
+                      <div key={i} className="group">
+                        <div className="flex items-center gap-1.5">
+                          <div className="flex-1 min-w-0">
+                            <div className="text-[10px] text-white/70 leading-tight truncate">
+                              <span className="text-orange-400/70 font-medium">{pair.name1}</span>
+                              <span className="text-white/20 mx-1">&harr;</span>
+                              <span className="text-orange-400/70 font-medium">{pair.name2}</span>
+                            </div>
+                          </div>
+                          <span className="text-[8px] text-white/25 shrink-0 tabular-nums">
+                            {pair.count}x
+                          </span>
+                        </div>
+                        <div className="mt-0.5 flex items-center gap-1.5">
+                          <div className="flex-1 h-[3px] bg-white/5 rounded-full overflow-hidden">
+                            <div
+                              className="h-full bg-orange-400/40 rounded-full"
+                              style={{ width: `${barWidth}%` }}
+                            />
+                          </div>
+                          <span className="text-[7px] text-white/15 shrink-0">
+                            {timeAgo(pair.lastTalked)}
+                          </span>
+                        </div>
+                      </div>
+                    );
+                  })}
+                  <div className="text-[8px] text-white/20 mt-1">
+                    Who talks to who most
+                  </div>
+                </>
+              ) : (
+                <div className="text-[9px] text-white/20">
+                  No conversations recorded yet
+                </div>
+              )}
             </div>
           )}
         </div>
