@@ -255,7 +255,7 @@ export const conversationInputs = {
       playerId,
       invitee: playerId,
     },
-    handler: (game: Game, now: number, args): GameId<'conversations'> => {
+    handler: (game: Game, now: number, args): GameId<'conversations'> | null => {
       const playerId = parseGameId('players', args.playerId);
       const player = game.world.players.get(playerId);
       if (!player) {
@@ -269,8 +269,8 @@ export const conversationInputs = {
       console.log(`Starting ${playerId} ${inviteeId}...`);
       const { conversationId, error } = Conversation.start(game, now, player, invitee);
       if (!conversationId) {
-        // TODO: pass it back to the client for them to show an error.
-        throw new Error(error);
+        console.log(`Can't start conversation: ${error}`);
+        return null;
       }
       return conversationId;
     },

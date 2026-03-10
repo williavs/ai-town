@@ -159,6 +159,14 @@ export class Game extends AbstractGame {
     if (!handler) {
       throw new Error(`Invalid input: ${name}`);
     }
+    // Update lastInput for human players so they don't get kicked for idle.
+    const playerId = (args as any).playerId;
+    if (playerId) {
+      const player = this.world.players.get(playerId);
+      if (player?.human) {
+        player.lastInput = now;
+      }
+    }
     return handler(this, now, args as any);
   }
 
