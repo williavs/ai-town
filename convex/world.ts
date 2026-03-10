@@ -221,22 +221,19 @@ export const previousConversation = query({
     playerId,
   },
   handler: async (ctx, args) => {
-    // Walk the player's history in descending order, looking for a nonempty
-    // conversation.
-    const members = ctx.db
+    // Grab recent history in one bounded read, then scan for a nonempty conversation.
+    const recentHistory = await ctx.db
       .query('participatedTogether')
       .withIndex('playerHistory', (q) => q.eq('worldId', args.worldId).eq('player1', args.playerId))
-      .order('desc');
+      .order('desc')
+      .take(20);
 
-    for await (const member of members) {
+    for (const member of recentHistory) {
       const conversation = await ctx.db
         .query('archivedConversations')
         .withIndex('worldId', (q) => q.eq('worldId', args.worldId).eq('id', member.conversationId))
         .unique();
-      if (!conversation) {
-        throw new Error(`Invalid conversation ID: ${member.conversationId}`);
-      }
-      if (conversation.numMessages > 0) {
+      if (conversation && conversation.numMessages > 0) {
         return conversation;
       }
     }

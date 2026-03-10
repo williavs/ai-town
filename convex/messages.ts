@@ -12,19 +12,20 @@ export const listMessages = query({
     const messages = await ctx.db
       .query('messages')
       .withIndex('conversationId', (q) => q.eq('worldId', args.worldId).eq('conversationId', args.conversationId))
+      .take(50);
+    // Batch-load all player names for this world once instead of per-message.
+    const playerDescriptions = await ctx.db
+      .query('playerDescriptions')
+      .withIndex('worldId', (q) => q.eq('worldId', args.worldId))
       .collect();
-    const out = [];
-    for (const message of messages) {
-      const playerDescription = await ctx.db
-        .query('playerDescriptions')
-        .withIndex('worldId', (q) => q.eq('worldId', args.worldId).eq('playerId', message.author))
-        .first();
-      if (!playerDescription) {
-        throw new Error(`Invalid author ID: ${message.author}`);
-      }
-      out.push({ ...message, authorName: playerDescription.name });
+    const nameMap: Record<string, string> = {};
+    for (const pd of playerDescriptions) {
+      nameMap[pd.playerId] = pd.name;
     }
-    return out;
+    return messages.map((message) => ({
+      ...message,
+      authorName: nameMap[message.author] ?? message.author,
+    }));
   },
 });
 
