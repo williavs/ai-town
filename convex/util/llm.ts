@@ -175,10 +175,17 @@ export async function chatCompletion(
     if (body.stream) {
       return new ChatCompletionContent(result.body!, stopWords);
     } else {
-      const json = (await result.json()) as CreateChatCompletionResponse;
-      const content = json.choices[0].message?.content;
-      if (content === undefined) {
-        throw new Error('Unexpected result from OpenAI: ' + JSON.stringify(json));
+      const text = await result.text();
+      const json = JSON.parse(text);
+      const choice = json.choices?.[0];
+      if (!choice) {
+        throw new Error('No choices in LLM response: ' + text.slice(0, 500));
+      }
+      const content = choice.message?.content
+        ?? choice.message?.reasoning
+        ?? '';
+      if (typeof content !== 'string') {
+        throw new Error('Unexpected result from LLM: ' + text.slice(0, 500));
       }
       console.log(content);
       return content;
