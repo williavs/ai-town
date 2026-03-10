@@ -146,10 +146,6 @@ export async function chatCompletion(
   body.model = body.model ?? config.chatModel;
   const stopWords = body.stop ? (typeof body.stop === 'string' ? [body.stop] : body.stop) : [];
   if (config.stopWords) stopWords.push(...config.stopWords);
-  // Disable reasoning/thinking for models that support it (e.g. Nemotron).
-  if (body.messages?.[0]?.role === 'system') {
-    body.messages[0].content = '/no_think\n' + (body.messages[0].content ?? '');
-  }
   const {
     result: content,
     retries,
@@ -224,17 +220,20 @@ export async function fetchEmbeddingBatch(texts: string[]) {
       ),
     };
   }
+  // Use separate embedding endpoint if configured (e.g. OpenRouter directly),
+  // otherwise fall back to the main LLM URL.
+  const embeddingUrl = process.env.LLM_EMBEDDING_URL ?? config.url;
+  const embeddingKey = process.env.LLM_EMBEDDING_KEY ?? config.apiKey;
+  const embeddingHeaders: Record<string, string> = { 'Content-Type': 'application/json' };
+  if (embeddingKey) embeddingHeaders['Authorization'] = 'Bearer ' + embeddingKey;
   const {
     result: json,
     retries,
     ms,
   } = await retryWithBackoff(async () => {
-    const result = await fetch(config.url + '/v1/embeddings', {
+    const result = await fetch(embeddingUrl + '/v1/embeddings', {
       method: 'POST',
-      headers: {
-        'Content-Type': 'application/json',
-        ...AuthHeaders(),
-      },
+      headers: embeddingHeaders,
 
       body: JSON.stringify({
         model: config.embeddingModel,
