@@ -82,12 +82,22 @@ export const storyDiscussions = query({
     const stories = await ctx.db.query('hnStories').order('desc').take(5);
     if (stories.length === 0) return [];
 
+    // Batch-load all player names for this world.
+    const playerDescs = await ctx.db
+      .query('playerDescriptions')
+      .withIndex('worldId', (q) => q.eq('worldId', worldId))
+      .collect();
+    const nameMap: Record<string, string> = {};
+    for (const pd of playerDescs) {
+      nameMap[pd.playerId] = pd.name;
+    }
+
     // Get recent messages and group by conversation.
     const messages = await ctx.db
       .query('messages')
       .withIndex('conversationId', (q) => q.eq('worldId', worldId))
       .order('desc')
-      .take(300);
+      .take(100);
 
     // Group messages by conversationId.
     const convos: Record<string, typeof messages> = {};
@@ -105,20 +115,6 @@ export const storyDiscussions = query({
       return { story: s, words };
     });
 
-    // Resolve player names (cache to avoid repeated lookups).
-    const nameCache: Record<string, string> = {};
-    async function getName(playerId: string) {
-      if (nameCache[playerId]) return nameCache[playerId];
-      const desc = await ctx.db
-        .query('playerDescriptions')
-        .withIndex('worldId', (q) =>
-          q.eq('worldId', worldId).eq('playerId', playerId),
-        )
-        .first();
-      nameCache[playerId] = desc?.name ?? playerId;
-      return nameCache[playerId];
-    }
-
     // Match entire conversations to stories by keyword overlap.
     type ConvoThread = {
       conversationId: string;
@@ -127,7 +123,6 @@ export const storyDiscussions = query({
     const grouped: Record<number, ConvoThread[]> = {};
 
     for (const [convoId, msgs] of Object.entries(convos)) {
-      // Concatenate all messages to check for topic keywords.
       const allText = msgs.map((m) => m.text).join(' ').toLowerCase();
       for (const { story, words } of storyKeywords) {
         if (words.some((w) => allText.includes(w))) {
@@ -136,18 +131,14 @@ export const storyDiscussions = query({
             const sorted = [...msgs].sort(
               (a, b) => a._creationTime - b._creationTime,
             );
-            const thread: ConvoThread = {
+            grouped[story.hnId].push({
               conversationId: convoId,
-              messages: [],
-            };
-            for (const m of sorted) {
-              thread.messages.push({
-                authorName: await getName(m.author),
+              messages: sorted.map((m) => ({
+                authorName: nameMap[m.author] ?? m.author,
                 text: m.text,
                 _creationTime: m._creationTime,
-              });
-            }
-            grouped[story.hnId].push(thread);
+              })),
+            });
           }
           break;
         }
@@ -167,7 +158,6 @@ export const storyDiscussions = query({
 export const agentRelationships = query({
   args: { worldId: v.id('worlds') },
   handler: async (ctx, { worldId }) => {
-    // Get all participatedTogether records for this world.
     const allPlayers = await ctx.db
       .query('playerDescriptions')
       .withIndex('worldId', (q) => q.eq('worldId', worldId))
@@ -178,33 +168,29 @@ export const agentRelationships = query({
       nameMap[p.playerId] = p.name;
     }
 
+    // Single query for all recent participation records in this world.
+    const allHistory = await ctx.db
+      .query('participatedTogether')
+      .withIndex('playerHistory', (q) => q.eq('worldId', worldId))
+      .order('desc')
+      .take(500);
+
     // Count conversations between each pair.
     const pairCounts: Record<string, { player1: string; player2: string; count: number; lastTalked: number }> = {};
-
-    for (const p of allPlayers) {
-      const history = await ctx.db
-        .query('participatedTogether')
-        .withIndex('playerHistory', (q) => q.eq('worldId', worldId).eq('player1', p.playerId))
-        .order('desc')
-        .take(100);
-
-      for (const record of history) {
-        // Normalize pair key so (A,B) and (B,A) are the same.
-        const key = [record.player1, record.player2].sort().join('|');
-        if (!pairCounts[key]) {
-          pairCounts[key] = {
-            player1: record.player1,
-            player2: record.player2,
-            count: 0,
-            lastTalked: 0,
-          };
-        }
-        pairCounts[key].count++;
-        pairCounts[key].lastTalked = Math.max(pairCounts[key].lastTalked, record.ended);
+    for (const record of allHistory) {
+      const key = [record.player1, record.player2].sort().join('|');
+      if (!pairCounts[key]) {
+        pairCounts[key] = {
+          player1: record.player1,
+          player2: record.player2,
+          count: 0,
+          lastTalked: 0,
+        };
       }
+      pairCounts[key].count++;
+      pairCounts[key].lastTalked = Math.max(pairCounts[key].lastTalked, record.ended);
     }
 
-    // Sort by count descending, take top 15.
     const pairs = Object.values(pairCounts)
       .sort((a, b) => b.count - a.count)
       .slice(0, 15)

@@ -238,7 +238,7 @@ export const loadMessages = internalQuery({
       .withIndex('conversationId', (q) =>
         q.eq('worldId', args.worldId).eq('conversationId', args.conversationId),
       )
-      .collect();
+      .take(100);
     return messages;
   },
 });
