@@ -7,7 +7,6 @@ import { ConvexError } from 'convex/values';
 import { Id } from '../../../convex/_generated/dataModel';
 import { useCallback, useState } from 'react';
 import { waitForInput } from '../../hooks/sendInput';
-import { useServerGame } from '../../hooks/serverGame';
 import { useSessionId } from '../../hooks/useSessionId';
 import { usePlayerName } from '../../hooks/usePlayerName';
 import NameEntryModal from '../NameEntryModal';
@@ -15,28 +14,34 @@ import NameEntryModal from '../NameEntryModal';
 export default function InteractButton() {
   const worldStatus = useQuery(api.world.defaultWorldStatus);
   const worldId = worldStatus?.worldId;
-  const game = useServerGame(worldId);
   const sessionId = useSessionId();
   const { savedName, saveName, clearName } = usePlayerName();
   const [showNameModal, setShowNameModal] = useState(false);
+  const [joining, setJoining] = useState(false);
 
+  // Use userStatus directly to check if playing -- no need for useServerGame.
   const humanTokenIdentifier = useQuery(
     api.world.userStatus,
     worldId ? { worldId, sessionId } : 'skip',
   );
-  const userPlayerId =
-    game && [...game.world.players.values()].find((p) => p.human === humanTokenIdentifier)?.id;
+  const worldState = useQuery(api.world.worldState, worldId ? { worldId } : 'skip');
+  const isPlaying = !!(
+    humanTokenIdentifier &&
+    worldState?.world.players.find((p: any) => p.human === humanTokenIdentifier)
+  );
+
   const join = useMutation(api.world.joinWorld);
   const leave = useMutation(api.world.leaveWorld);
-  const isPlaying = !!userPlayerId;
 
   const convex = useConvex();
   const joinInput = useCallback(
     async (worldId: Id<'worlds'>, name: string) => {
+      setJoining(true);
       let inputId;
       try {
         inputId = await join({ worldId, name, sessionId });
       } catch (e: any) {
+        setJoining(false);
         if (e instanceof ConvexError) {
           toast.error(e.data);
           return;
@@ -47,6 +52,8 @@ export default function InteractButton() {
         await waitForInput(convex, inputId);
       } catch (e: any) {
         toast.error(e.message);
+      } finally {
+        setJoining(false);
       }
     },
     [convex, sessionId],
@@ -61,11 +68,14 @@ export default function InteractButton() {
   };
 
   const joinOrLeaveGame = () => {
-    if (!worldId || game === undefined) {
+    if (!worldId) {
+      return;
+    }
+    if (joining) {
       return;
     }
     if (isPlaying) {
-      console.log(`Leaving game for player ${userPlayerId}`);
+      console.log(`Leaving game`);
       clearName();
       void leave({ worldId, sessionId });
     } else if (savedName) {
@@ -76,10 +86,12 @@ export default function InteractButton() {
     }
   };
 
+  const label = joining ? 'Joining...' : isPlaying ? 'Leave' : 'Interact';
+
   return (
     <>
       <Button imgUrl={interactImg} onClick={joinOrLeaveGame}>
-        {isPlaying ? 'Leave' : 'Interact'}
+        {label}
       </Button>
       <NameEntryModal
         isOpen={showNameModal}
