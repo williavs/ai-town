@@ -146,7 +146,10 @@ export async function chatCompletion(
   body.model = body.model ?? config.chatModel;
   const stopWords = body.stop ? (typeof body.stop === 'string' ? [body.stop] : body.stop) : [];
   if (config.stopWords) stopWords.push(...config.stopWords);
-  console.log(body);
+  // Disable reasoning/thinking for models that support it (e.g. Nemotron).
+  if (body.messages?.[0]?.role === 'system') {
+    body.messages[0].content = '/no_think\n' + (body.messages[0].content ?? '');
+  }
   const {
     result: content,
     retries,
@@ -183,23 +186,7 @@ export async function chatCompletion(
       }
       let content = choice.message?.content ?? '';
       if (typeof content !== 'string') content = '';
-      // Strip reasoning/thinking tags that some models leak into content.
-      content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
-      // If content is empty (reasoning model put everything in reasoning field),
-      // extract the last quoted sentence or final answer from reasoning.
-      if (!content && choice.message?.reasoning) {
-        const reasoning: string = choice.message.reasoning;
-        // Look for quoted text which is typically the final answer.
-        const quotes = reasoning.match(/"([^"]{10,})"/g);
-        if (quotes && quotes.length > 0) {
-          content = quotes[quotes.length - 1].replace(/^"|"$/g, '');
-        } else {
-          // Take the last non-empty line as the response.
-          const lines = reasoning.trim().split('\n').filter((l: string) => l.trim());
-          content = lines[lines.length - 1]?.trim() ?? 'Hey!';
-        }
-      }
-      if (!content) content = 'Hey!';
+      content = content.replace(/^["']|["']$/g, '').trim();
       console.log(content);
       return content;
     }
