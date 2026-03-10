@@ -182,11 +182,24 @@ export async function chatCompletion(
         throw new Error('No choices in LLM response: ' + text.slice(0, 500));
       }
       let content = choice.message?.content ?? '';
-      if (typeof content !== 'string') {
-        throw new Error('Unexpected result from LLM: ' + text.slice(0, 500));
-      }
-      // Strip reasoning/thinking tags that some models (e.g. Nemotron) leak into content.
+      if (typeof content !== 'string') content = '';
+      // Strip reasoning/thinking tags that some models leak into content.
       content = content.replace(/<think>[\s\S]*?<\/think>/g, '').trim();
+      // If content is empty (reasoning model put everything in reasoning field),
+      // extract the last quoted sentence or final answer from reasoning.
+      if (!content && choice.message?.reasoning) {
+        const reasoning: string = choice.message.reasoning;
+        // Look for quoted text which is typically the final answer.
+        const quotes = reasoning.match(/"([^"]{10,})"/g);
+        if (quotes && quotes.length > 0) {
+          content = quotes[quotes.length - 1].replace(/^"|"$/g, '');
+        } else {
+          // Take the last non-empty line as the response.
+          const lines = reasoning.trim().split('\n').filter((l: string) => l.trim());
+          content = lines[lines.length - 1]?.trim() ?? 'Hey!';
+        }
+      }
+      if (!content) content = 'Hey!';
       console.log(content);
       return content;
     }
