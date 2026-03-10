@@ -1,4 +1,4 @@
-import { internalAction, internalQuery } from './_generated/server';
+import { internalAction, internalQuery, query } from './_generated/server';
 import { internal } from './_generated/api';
 import { v } from 'convex/values';
 import { internalMutation } from './_generated/server';
@@ -66,5 +66,12 @@ export const getTopStories = internalQuery({
       .order('desc')
       .take(limit ?? 3);
     return stories;
+  },
+});
+
+export const listTopStories = query({
+  args: {},
+  handler: async (ctx) => {
+    return await ctx.db.query('hnStories').order('desc').take(5);
   },
 });
