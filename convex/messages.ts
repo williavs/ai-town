@@ -7,10 +7,15 @@ import { VACUUM_MAX_AGE } from './constants';
 // Strip inline function-call JSON artifacts that Llama 3.1 8B sometimes embeds in message text.
 function cleanMessageText(text: string): string {
   if (!text) return text;
-  // Remove JSON blocks like {"name": "web_search", "arguments": {...}}
-  const cleaned = text.replace(/\{"name"\s*:\s*"web_search"[^}]*\{[^}]*\}[^}]*\}/g, '').trim();
-  // If the entire message was just an artifact, return empty
-  return cleaned;
+  let cleaned = text;
+  // Remove various function call JSON formats:
+  // {"name": "web_search", "arguments": {...}}
+  // {"name": "function", "function": "web_search", "arguments": {...}}
+  // {"type": "function", "name": "web_search", "arguments": {...}}
+  cleaned = cleaned.replace(/\{[^{}]*"web_search"[^{}]*\{[^}]*\}[^}]*\}/g, '');
+  // Remove <function=web_search>{...}</function> XML-style calls
+  cleaned = cleaned.replace(/<function=web_search>\{[^}]*\}<\/function>/g, '');
+  return cleaned.trim();
 }
 
 export const listMessages = query({
@@ -106,10 +111,17 @@ export const allConversations = query({
     // Sort newest first
     recentArchived.sort((a, b) => b.ended - a.ended);
 
+    // Max duration for a valid conversation (24 hours -- anything longer is a stuck artifact)
+    const MAX_VALID_DURATION = 24 * 60 * 60 * 1000;
+    // Cap messages per conversation to keep payload reasonable
+    const MAX_DISPLAY_MESSAGES = 50;
+
     const archivedWithMessages = [];
     for (const conv of recentArchived) {
       // Skip empty conversations (failed invites with no messages)
       if (conv.numMessages === 0) continue;
+      // Skip abnormally long conversations (stuck artifacts from before fixes)
+      if (conv.ended - conv.created > MAX_VALID_DURATION) continue;
 
       const rawMessages = await ctx.db
         .query('messages')
@@ -124,7 +136,8 @@ export const allConversations = query({
           text: cleanMessageText(m.text),
           time: m._creationTime,
         }))
-        .filter((m) => m.text.length > 0);
+        .filter((m) => m.text.length > 0)
+        .slice(-MAX_DISPLAY_MESSAGES);
 
       // Only include if there are real messages after cleaning
       if (messages.length === 0) continue;
