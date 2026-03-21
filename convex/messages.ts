@@ -111,17 +111,10 @@ export const allConversations = query({
     // Sort newest first
     recentArchived.sort((a, b) => b.ended - a.ended);
 
-    // Max duration for a valid conversation (24 hours -- anything longer is a stuck artifact)
-    const MAX_VALID_DURATION = 24 * 60 * 60 * 1000;
-    // Cap messages per conversation to keep payload reasonable
-    const MAX_DISPLAY_MESSAGES = 50;
-
     const archivedWithMessages = [];
     for (const conv of recentArchived) {
       // Skip empty conversations (failed invites with no messages)
       if (conv.numMessages === 0) continue;
-      // Skip abnormally long conversations (stuck artifacts from before fixes)
-      if (conv.ended - conv.created > MAX_VALID_DURATION) continue;
 
       const rawMessages = await ctx.db
         .query('messages')
@@ -136,8 +129,7 @@ export const allConversations = query({
           text: cleanMessageText(m.text),
           time: m._creationTime,
         }))
-        .filter((m) => m.text.length > 0)
-        .slice(-MAX_DISPLAY_MESSAGES);
+        .filter((m) => m.text.length > 0);
 
       // Only include if there are real messages after cleaning
       if (messages.length === 0) continue;
