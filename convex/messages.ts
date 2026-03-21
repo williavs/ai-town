@@ -4,6 +4,15 @@ import { insertInput } from './aiTown/insertInput';
 import { conversationId, playerId } from './aiTown/ids';
 import { VACUUM_MAX_AGE } from './constants';
 
+// Strip inline function-call JSON artifacts that Llama 3.1 8B sometimes embeds in message text.
+function cleanMessageText(text: string): string {
+  if (!text) return text;
+  // Remove JSON blocks like {"name": "web_search", "arguments": {...}}
+  const cleaned = text.replace(/\{"name"\s*:\s*"web_search"[^}]*\{[^}]*\}[^}]*\}/g, '').trim();
+  // If the entire message was just an artifact, return empty
+  return cleaned;
+}
+
 export const listMessages = query({
   args: {
     worldId: v.id('worlds'),
@@ -23,10 +32,13 @@ export const listMessages = query({
     for (const pd of playerDescriptions) {
       nameMap[pd.playerId] = pd.name;
     }
-    return messages.map((message) => ({
-      ...message,
-      authorName: nameMap[message.author] ?? message.author,
-    }));
+    return messages
+      .map((message) => ({
+        ...message,
+        text: cleanMessageText(message.text),
+        authorName: nameMap[message.author] ?? message.author,
+      }))
+      .filter((m) => m.text.length > 0);
   },
 });
 
@@ -56,25 +68,31 @@ export const allConversations = query({
           participants.push(nameMap[p.playerId] || p.playerId);
         }
       }
-      const messages = await ctx.db
+      const rawMessages = await ctx.db
         .query('messages')
         .withIndex('conversationId', (q) =>
           q.eq('worldId', args.worldId).eq('conversationId', conv.id),
         )
         .collect();
-      active.push({
-        id: conv.id,
-        participants,
-        numMessages: conv.numMessages,
-        isTyping: conv.isTyping,
-        created: conv.created,
-        messages: messages.map((m) => ({
+      const messages = rawMessages
+        .map((m) => ({
           id: m._id,
           author: nameMap[m.author] || m.author,
-          text: m.text,
+          text: cleanMessageText(m.text),
           time: m._creationTime,
-        })),
-      });
+        }))
+        .filter((m) => m.text.length > 0);
+      // Only include active conversations that have participants
+      if (participants.length > 0) {
+        active.push({
+          id: conv.id,
+          participants,
+          numMessages: conv.numMessages,
+          isTyping: conv.isTyping,
+          created: conv.created,
+          messages,
+        });
+      }
     }
 
     // Archived conversations from the retention window
@@ -90,24 +108,34 @@ export const allConversations = query({
 
     const archivedWithMessages = [];
     for (const conv of recentArchived) {
-      const messages = await ctx.db
+      // Skip empty conversations (failed invites with no messages)
+      if (conv.numMessages === 0) continue;
+
+      const rawMessages = await ctx.db
         .query('messages')
         .withIndex('conversationId', (q) =>
           q.eq('worldId', args.worldId).eq('conversationId', conv.id),
         )
         .collect();
+      const messages = rawMessages
+        .map((m) => ({
+          id: m._id,
+          author: nameMap[m.author] || m.author,
+          text: cleanMessageText(m.text),
+          time: m._creationTime,
+        }))
+        .filter((m) => m.text.length > 0);
+
+      // Only include if there are real messages after cleaning
+      if (messages.length === 0) continue;
+
       archivedWithMessages.push({
         id: conv.id,
         participants: conv.participants.map((p) => nameMap[p] || p),
-        numMessages: conv.numMessages,
+        numMessages: messages.length,
         created: conv.created,
         ended: conv.ended,
-        messages: messages.map((m) => ({
-          id: m._id,
-          author: nameMap[m.author] || m.author,
-          text: m.text,
-          time: m._creationTime,
-        })),
+        messages,
       });
     }
 
