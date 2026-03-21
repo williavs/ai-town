@@ -106,16 +106,30 @@ export const storyDiscussions = query({
       convos[msg.conversationId].push(msg);
     }
 
-    // Build keyword sets per story (words 4+ chars, lowercased).
+    // Build keyword sets per story.
+    // Stopwords that appear in tech conversations regardless of topic.
+    const stopwords = new Set([
+      'about', 'also', 'been', 'being', 'could', 'does', 'from', 'have',
+      'into', 'just', 'know', 'like', 'make', 'made', 'more', 'most',
+      'much', 'need', 'only', 'open', 'over', 'said', 'show', 'some',
+      'such', 'take', 'than', 'that', 'them', 'then', 'they', 'this',
+      'very', 'want', 'well', 'were', 'what', 'when', 'will', 'with',
+      'your', 'code', 'data', 'work', 'used', 'using', 'really', 'think',
+      'going', 'would', 'should', 'there', 'their', 'these', 'those',
+      'other', 'after', 'still', 'every', 'first', 'thing', 'people',
+      'right', 'great', 'build', 'model', 'system', 'point',
+    ]);
+
     const storyKeywords = stories.map((s) => {
       const words = s.title
         .toLowerCase()
         .split(/\W+/)
-        .filter((w) => w.length >= 4);
+        .filter((w) => w.length >= 4 && !stopwords.has(w));
       return { story: s, words };
     });
 
-    // Match entire conversations to stories by keyword overlap.
+    // Match conversations to stories: require 2+ distinct keyword hits,
+    // or 1 hit if the story only has 1 non-stopword keyword.
     type ConvoThread = {
       conversationId: string;
       messages: { authorName: string; text: string; _creationTime: number }[];
@@ -125,7 +139,10 @@ export const storyDiscussions = query({
     for (const [convoId, msgs] of Object.entries(convos)) {
       const allText = msgs.map((m) => m.text).join(' ').toLowerCase();
       for (const { story, words } of storyKeywords) {
-        if (words.some((w) => allText.includes(w))) {
+        if (words.length === 0) continue;
+        const hits = words.filter((w) => allText.includes(w)).length;
+        const threshold = words.length === 1 ? 1 : 2;
+        if (hits >= threshold) {
           if (!grouped[story.hnId]) grouped[story.hnId] = [];
           if (grouped[story.hnId].length < 5) {
             const sorted = [...msgs].sort(

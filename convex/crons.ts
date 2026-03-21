@@ -17,6 +17,9 @@ crons.interval('restart dead worlds', { minutes: 5 }, internal.world.restartDead
 
 crons.interval('fetch HN stories', { hours: 2 }, internal.hn.fetchTopStories);
 
+// Run town pulse analysis every 2.5 days (before the 3-day vacuum wipes data)
+crons.interval('town pulse analysis', { hours: 60 }, internal.townPulse.analyzePulse);
+
 crons.interval('vacuum old entries', { hours: 6 }, internal.crons.vacuumOldEntries);
 
 export default crons;

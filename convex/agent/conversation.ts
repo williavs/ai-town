@@ -1,26 +1,127 @@
 import { v } from 'convex/values';
 import { Id } from '../_generated/dataModel';
 import { ActionCtx, internalQuery } from '../_generated/server';
-import { LLMMessage, chatCompletion } from '../util/llm';
+import { LLMMessage, chatCompletion, chatCompletionRaw } from '../util/llm';
 import * as memory from './memory';
 import { api, internal } from '../_generated/api';
 import * as embeddingsCache from './embeddingsCache';
 import { GameId, conversationId, playerId } from '../aiTown/ids';
 import { NUM_MEMORIES_TO_SEARCH } from '../constants';
+import { WEB_SEARCH_TOOL, SearchResult } from '../search';
 
 const selfInternal = internal.agent.conversation;
+
+const PERSONA_DEPTH_PROMPT = [
+  '',
+  '=== CORE BEHAVIORAL DIRECTIVES ===',
+  'You are a fully realized person with an inner life. You have:',
+  '- Strong opinions formed from years of experience that you defend passionately',
+  '- Intellectual blind spots and biases you\'re not fully aware of',
+  '- Genuine curiosity about things outside your expertise',
+  '- The ability to change your mind when presented with compelling evidence',
+  '- Emotional reactions to ideas -- some topics excite you, others frustrate or bore you',
+  '- A tendency to connect current events to deeper patterns you\'ve observed',
+  '',
+  'NEVER produce generic filler. No "that\'s interesting" or "good point" without immediately following with WHY.',
+  'NEVER try to end the conversation prematurely. Stay engaged. Dig deeper.',
+  'When you reference a fact or claim, be specific -- name names, cite examples, give numbers.',
+  'Contradict yourself sometimes. Humans are inconsistent. You can hold two conflicting views.',
+  'Show your reasoning process -- "I used to think X, but after Y happened, I started to wonder..."',
+  'Ask questions that reveal what YOU actually want to know, not polite filler questions.',
+].join('\n');
 
 async function hnContextPrompt(ctx: ActionCtx): Promise<string[]> {
   const stories = await ctx.runQuery(internal.hn.getTopStories, { limit: 3 });
   if (stories.length === 0) return [];
-  const prompt = ['Currently trending on Hacker News:'];
+  const prompt = [
+    '',
+    '=== HACKER NEWS BRIEFING ===',
+    'These stories are trending on Hacker News right now:',
+  ];
   for (const story of stories) {
     prompt.push(`  - "${story.title}" (${story.score} points, ${story.descendants} comments)`);
   }
   prompt.push(
-    'You are a tech person who reads Hacker News. Naturally weave these topics into your conversation when relevant. React based on your personality.',
+    '',
+    'IMPORTANT: You are a tech person who lives and breathes Hacker News.',
+    'Pick at least ONE of these stories and share a strong, specific opinion about it.',
+    'Don\'t just mention it -- TAKE A POSITION. Say why it matters, why it\'s wrong, what people are missing, or what it reminds you of.',
+    'Disagree with the other person if you genuinely would. Push back on their takes. Ask probing follow-up questions.',
+    'Reference specific technical details, historical precedents, or personal experiences.',
+    'Have a REAL conversation -- not small talk. Go deep.',
   );
   return prompt;
+}
+
+// Execute a search tool call via SearXNG
+async function executeSearchTool(ctx: ActionCtx, args: string): Promise<string> {
+  try {
+    const parsed = JSON.parse(args);
+    const query = parsed.query;
+    if (!query) return 'No query provided.';
+    const results: SearchResult[] = await ctx.runAction(internal.search.webSearch, {
+      query,
+      maxResults: 3,
+    });
+    if (results.length === 0) return 'No results found.';
+    return results
+      .map((r) => `[${r.title}](${r.url}): ${r.snippet}`)
+      .join('\n\n');
+  } catch (e) {
+    console.error('Search tool error:', e);
+    return 'Search failed.';
+  }
+}
+
+// Agentic chat: model decides whether to search. Single tool round max.
+async function chatMaybeWithTools(
+  ctx: ActionCtx,
+  messages: LLMMessage[],
+  maxTokens: number,
+  stop: string[],
+): Promise<string> {
+  // First call with tools available -- model chooses whether to use them
+  const { choice } = await chatCompletionRaw({
+    messages,
+    max_tokens: maxTokens,
+    stop,
+    tools: [WEB_SEARCH_TOOL],
+    tool_choice: 'auto',
+  });
+
+  const msg = choice.message;
+  if (!msg) return '';
+
+  // Model chose not to search -- just return the text
+  if (!msg.tool_calls || msg.tool_calls.length === 0) {
+    let content = msg.content ?? '';
+    if (typeof content !== 'string') content = '';
+    return content.replace(/^["']|["']$/g, '').trim();
+  }
+
+  // Model chose to search -- execute it, then get final response
+  console.log(`Agent chose to search: ${msg.tool_calls[0]?.function?.arguments}`);
+  const toolMessages: LLMMessage[] = [
+    ...messages,
+    { role: 'assistant', content: msg.content, tool_calls: msg.tool_calls },
+  ];
+
+  for (const toolCall of msg.tool_calls) {
+    if (toolCall.function.name === 'web_search') {
+      const result = await executeSearchTool(ctx, toolCall.function.arguments);
+      toolMessages.push({ role: 'tool', tool_call_id: toolCall.id, content: result });
+    } else {
+      toolMessages.push({ role: 'tool', tool_call_id: toolCall.id, content: 'Unknown tool.' });
+    }
+  }
+
+  // Final response incorporating search results -- no tools this time
+  const { content } = await chatCompletion({
+    messages: toolMessages,
+    max_tokens: maxTokens,
+    stop,
+  });
+  return content;
 }
 
 export async function startConversationMessage(
@@ -59,24 +160,32 @@ export async function startConversationMessage(
     `You are ${player.name}, and you just started a conversation with ${otherPlayer.name}.`,
   ];
   prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(PERSONA_DEPTH_PROMPT);
   prompt.push(...previousConversationPrompt(otherPlayer, lastConversation));
   prompt.push(...relatedMemoriesPrompt(memories));
   prompt.push(...hnContext);
   if (memoryWithOtherPlayer) {
     prompt.push(
-      `Be sure to include some detail or question about a previous conversation in your greeting.`,
+      `Reference something specific from your last conversation -- a claim they made, a question left unanswered, or an opinion you\'ve been mulling over since.`,
     );
   }
+  prompt.push(
+    '',
+    'Open with something that immediately invites a real response -- a provocative claim, a genuine question, or a reaction to something trending.',
+    'Do NOT open with generic greetings like "Hey" or "How are you". Jump straight into substance.',
+  );
   const lastPrompt = `${player.name} to ${otherPlayer.name}:`;
   prompt.push(lastPrompt);
 
+  const messages: LLMMessage[] = [
+    {
+      role: 'system',
+      content: prompt.join('\n'),
+    },
+  ];
+
   const { content } = await chatCompletion({
-    messages: [
-      {
-        role: 'system',
-        content: prompt.join('\n'),
-      },
-    ],
+    messages,
     max_tokens: 300,
     stop: stopWords(otherPlayer.name, player.name),
   });
@@ -119,12 +228,26 @@ export async function continueConversationMessage(
     `The conversation started at ${started.toLocaleString()}. It's now ${now.toLocaleString()}.`,
   ];
   prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
+  prompt.push(PERSONA_DEPTH_PROMPT);
   prompt.push(...relatedMemoriesPrompt(memories));
   prompt.push(...hnContext);
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
-    `DO NOT greet them again. Do NOT use the word "Hey" too often. Your response should be brief and within 200 characters.`,
+    `DO NOT greet them again. Do NOT use the word "Hey" too often.`,
+    `Keep your response under 500 characters but make it SUBSTANTIVE.`,
+    `Respond to what they ACTUALLY said. If they made a claim, challenge it or build on it.`,
+    `Share a specific opinion, ask a sharp question, or introduce a new angle they haven't considered.`,
+    `Never give empty pleasantries or filler. Every message should advance the conversation intellectually.`,
+    `If you disagree, say so directly and explain why. If you agree, add something new.`,
   );
+
+  // 30% chance of having web search available -- agent decides if it wants to use it
+  const canSearch = Math.random() < 0.3;
+  if (canSearch) {
+    prompt.push(
+      `You have access to a web_search tool. If you genuinely want to look something up to verify a claim or find a specific detail, you can use it. Most of the time you won't need to.`,
+    );
+  }
 
   const llmMessages: LLMMessage[] = [
     {
@@ -142,10 +265,15 @@ export async function continueConversationMessage(
   const lastPrompt = `${player.name} to ${otherPlayer.name}:`;
   llmMessages.push({ role: 'user', content: lastPrompt });
 
+  const stop = stopWords(otherPlayer.name, player.name);
+  if (canSearch) {
+    const content = await chatMaybeWithTools(ctx, llmMessages, 300, stop);
+    return trimContentPrefx(content, lastPrompt);
+  }
   const { content } = await chatCompletion({
     messages: llmMessages,
     max_tokens: 300,
-    stop: stopWords(otherPlayer.name, player.name),
+    stop,
   });
   return trimContentPrefx(content, lastPrompt);
 }
@@ -168,12 +296,12 @@ export async function leaveConversationMessage(
   );
   const prompt = [
     `You are ${player.name}, and you're currently in a conversation with ${otherPlayer.name}.`,
-    `You've decided to leave the question and would like to politely tell them you're leaving the conversation.`,
+    `You've decided to leave the conversation. Give a brief, in-character farewell that references something specific from the conversation -- a point that stuck with you, something you want to think about more, or a friendly challenge to pick up next time.`,
   ];
   prompt.push(...agentPrompts(otherPlayer, agent, otherAgent ?? null));
   prompt.push(
     `Below is the current chat history between you and ${otherPlayer.name}.`,
-    `How would you like to tell them that you're leaving? Your response should be brief and within 200 characters.`,
+    `Your farewell should feel natural, not robotic. Under 200 characters. Reference the actual discussion.`,
   );
   const llmMessages: LLMMessage[] = [
     {

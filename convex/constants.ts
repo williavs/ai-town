@@ -36,10 +36,10 @@ export const INVITE_TIMEOUT = 60000;
 export const AWKWARD_CONVERSATION_TIMEOUT = 20_000;
 
 // Leave a conversation after participating too long.
-export const MAX_CONVERSATION_DURATION = 2 * 60_000;
+export const MAX_CONVERSATION_DURATION = 15 * 60_000;
 
-// Leave a conversation if it has more than 8 messages;
-export const MAX_CONVERSATION_MESSAGES = 8;
+// Leave a conversation if it has more than 25 messages;
+export const MAX_CONVERSATION_MESSAGES = 25;
 
 // Wait for 1s after sending an input to the engine. We can remove this
 // once we can await on an input being processed.
