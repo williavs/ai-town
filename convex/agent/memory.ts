@@ -65,7 +65,9 @@ export async function rememberConversation(
   const description = `Conversation with ${otherPlayer.name} at ${new Date(
     data.conversation._creationTime,
   ).toLocaleString()}: ${content}`;
-  const importance = await calculateImportance(description);
+  // Use a fixed importance instead of an LLM call -- saves 1 chatCompletion per agent per conversation.
+  // Conversations are always moderately important (5/9).
+  const importance = 5;
   const { embedding } = await fetchEmbedding(description);
   authors.delete(player.id as GameId<'players'>);
   await ctx.runMutation(selfInternal.insertMemory, {
@@ -81,7 +83,8 @@ export async function rememberConversation(
     },
     embedding,
   });
-  await reflectOnMemories(ctx, worldId, playerId);
+  // Skip reflectOnMemories -- it generates 4+ LLM calls (1 reflection + 3 importance ratings)
+  // that create burst traffic killing free providers. The conversation summary above is sufficient.
   return description;
 }
 
