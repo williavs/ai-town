@@ -335,8 +335,10 @@ export async function fetchModeration(content: string) {
 }
 
 // Retry after this much time, based on the retry number.
-const RETRY_BACKOFF = [1000, 10_000, 20_000]; // In ms
-const RETRY_JITTER = 100; // In ms
+// Single short retry only -- LiteLLM already handles retries and failover
+// across providers. Double-retrying creates request storms that burn free quotas.
+const RETRY_BACKOFF = [2000]; // In ms
+const RETRY_JITTER = 500; // In ms
 type RetryError = { retry: boolean; error: any };
 
 export async function retryWithBackoff<T>(
