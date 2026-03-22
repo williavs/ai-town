@@ -350,6 +350,24 @@ export const agentSendMessage = internalMutation({
   },
 });
 
+export const agentAbortOperation = internalMutation({
+  args: {
+    worldId: v.id('worlds'),
+    conversationId,
+    agentId,
+    operationId: v.string(),
+  },
+  handler: async (ctx, args) => {
+    await insertInput(ctx, args.worldId, 'agentFinishSendingMessage', {
+      conversationId: args.conversationId,
+      agentId: args.agentId,
+      timestamp: Date.now(),
+      leaveConversation: true,
+      operationId: args.operationId,
+    });
+  },
+});
+
 export const findConversationCandidate = internalQuery({
   args: {
     now: v.number(),

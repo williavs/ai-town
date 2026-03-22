@@ -60,6 +60,14 @@ export default defineSchema({
     .index('conversationId', ['worldId', 'conversationId'])
     .index('messageUuid', ['conversationId', 'messageUuid']),
 
+  llmHealth: defineTable({
+    worldId: v.id('worlds'),
+    consecutiveFailures: v.number(),
+    lastFailureTs: v.optional(v.number()),
+    pausedUntil: v.optional(v.number()),
+    tripCount: v.optional(v.number()),
+  }).index('worldId', ['worldId']),
+
   ...agentTables,
   ...aiTownTables,
   ...engineTables,

@@ -334,10 +334,11 @@ export async function fetchModeration(content: string) {
   return flagged;
 }
 
-// Retry after this much time, based on the retry number.
-// Single short retry only -- LiteLLM already handles retries and failover
-// across providers. Double-retrying creates request storms that burn free quotas.
-const RETRY_BACKOFF = [2000]; // In ms
+// No Convex-level retries -- the circuit breaker in llmHealth.ts handles
+// failures by pausing all agents and retrying after cooldown. LiteLLM still
+// does its own provider failover (1 retry). Any retry here just amplifies
+// the burst that exhausts free tier quotas.
+const RETRY_BACKOFF: number[] = []; // No retries
 const RETRY_JITTER = 500; // In ms
 type RetryError = { retry: boolean; error: any };
 

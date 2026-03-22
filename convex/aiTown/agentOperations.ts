@@ -24,13 +24,20 @@ export const agentRememberConversation = internalAction({
     operationId: v.string(),
   },
   handler: async (ctx, args) => {
-    await rememberConversation(
-      ctx,
-      args.worldId,
-      args.agentId as GameId<'agents'>,
-      args.playerId as GameId<'players'>,
-      args.conversationId as GameId<'conversations'>,
-    );
+    try {
+      await rememberConversation(
+        ctx,
+        args.worldId,
+        args.agentId as GameId<'agents'>,
+        args.playerId as GameId<'players'>,
+        args.conversationId as GameId<'conversations'>,
+      );
+    } catch (e: any) {
+      console.error(`rememberConversation failed for ${args.playerId}: ${e.message ?? e}`);
+      await ctx.runMutation(internal.aiTown.llmHealth.recordFailure, {
+        worldId: args.worldId,
+      });
+    }
     await sleep(Math.random() * 1000);
     await ctx.runMutation(api.aiTown.main.sendInput, {
       worldId: args.worldId,
@@ -55,6 +62,22 @@ export const agentGenerateMessage = internalAction({
     messageUuid: v.string(),
   },
   handler: async (ctx, args) => {
+    // Check circuit breaker before calling LLM.
+    const health = await ctx.runQuery(internal.aiTown.llmHealth.get, { worldId: args.worldId });
+    if (health?.pausedUntil && health.pausedUntil > Date.now()) {
+      console.log(
+        `Circuit breaker open, skipping LLM call. Resumes at ${new Date(health.pausedUntil).toISOString()}`,
+      );
+      // Abort without sending a message -- no garbage in the database.
+      await ctx.runMutation(internal.aiTown.agent.agentAbortOperation, {
+        worldId: args.worldId,
+        conversationId: args.conversationId,
+        agentId: args.agentId,
+        operationId: args.operationId,
+      });
+      return;
+    }
+
     let completionFn;
     switch (args.type) {
       case 'start':
@@ -69,24 +92,44 @@ export const agentGenerateMessage = internalAction({
       default:
         assertNever(args.type);
     }
-    const text = await completionFn(
-      ctx,
-      args.worldId,
-      args.conversationId as GameId<'conversations'>,
-      args.playerId as GameId<'players'>,
-      args.otherPlayerId as GameId<'players'>,
-    );
 
-    await ctx.runMutation(internal.aiTown.agent.agentSendMessage, {
-      worldId: args.worldId,
-      conversationId: args.conversationId,
-      agentId: args.agentId,
-      playerId: args.playerId,
-      text,
-      messageUuid: args.messageUuid,
-      leaveConversation: args.type === 'leave',
-      operationId: args.operationId,
-    });
+    try {
+      const text = await completionFn(
+        ctx,
+        args.worldId,
+        args.conversationId as GameId<'conversations'>,
+        args.playerId as GameId<'players'>,
+        args.otherPlayerId as GameId<'players'>,
+      );
+
+      await ctx.runMutation(internal.aiTown.agent.agentSendMessage, {
+        worldId: args.worldId,
+        conversationId: args.conversationId,
+        agentId: args.agentId,
+        playerId: args.playerId,
+        text,
+        messageUuid: args.messageUuid,
+        leaveConversation: args.type === 'leave',
+        operationId: args.operationId,
+      });
+
+      // LLM succeeded -- reset circuit breaker.
+      await ctx.runMutation(internal.aiTown.llmHealth.recordSuccess, {
+        worldId: args.worldId,
+      });
+    } catch (e: any) {
+      console.error(`LLM call failed for ${args.playerId}: ${e.message ?? e}`);
+      await ctx.runMutation(internal.aiTown.llmHealth.recordFailure, {
+        worldId: args.worldId,
+      });
+      // Abort without sending a garbage message.
+      await ctx.runMutation(internal.aiTown.agent.agentAbortOperation, {
+        worldId: args.worldId,
+        conversationId: args.conversationId,
+        agentId: args.agentId,
+        operationId: args.operationId,
+      });
+    }
   },
 });
 
@@ -144,8 +187,11 @@ export const agentDoSomething = internalAction({
         return;
       }
     }
+    // Don't start conversations when LLM providers are exhausted.
+    const health = await ctx.runQuery(internal.aiTown.llmHealth.get, { worldId: args.worldId });
+    const llmPaused = health?.pausedUntil && health.pausedUntil > Date.now();
     const invitee =
-      justLeftConversation || recentlyAttemptedInvite
+      justLeftConversation || recentlyAttemptedInvite || llmPaused
         ? undefined
         : await ctx.runQuery(internal.aiTown.agent.findConversationCandidate, {
             now,
