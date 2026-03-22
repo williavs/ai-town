@@ -87,8 +87,8 @@ export const allConversations = query({
           time: m._creationTime,
         }))
         .filter((m) => m.text.length > 0);
-      // Only include active conversations that have participants
-      if (participants.length > 0) {
+      // Only include active conversations that have participants and messages
+      if (participants.length > 0 && messages.length > 0) {
         active.push({
           id: conv.id,
           participants,
