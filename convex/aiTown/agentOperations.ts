@@ -65,16 +65,9 @@ export const agentGenerateMessage = internalAction({
     // Check circuit breaker before calling LLM.
     const health = await ctx.runQuery(internal.aiTown.llmHealth.get, { worldId: args.worldId });
     if (health?.pausedUntil && health.pausedUntil > Date.now()) {
-      console.log(
-        `Circuit breaker open, skipping LLM call. Resumes at ${new Date(health.pausedUntil).toISOString()}`,
-      );
-      // Abort without sending a message -- no garbage in the database.
-      await ctx.runMutation(internal.aiTown.agent.agentAbortOperation, {
-        worldId: args.worldId,
-        conversationId: args.conversationId,
-        agentId: args.agentId,
-        operationId: args.operationId,
-      });
+      // Just return silently. The agent's inProgressOperation will timeout
+      // after ACTION_TIMEOUT (60s), then the conversation will end via
+      // AWKWARD_CONVERSATION_TIMEOUT. No writes = no OCC storm.
       return;
     }
 
@@ -118,17 +111,18 @@ export const agentGenerateMessage = internalAction({
         worldId: args.worldId,
       });
     } catch (e: any) {
-      console.error(`LLM call failed for ${args.playerId}: ${e.message ?? e}`);
-      await ctx.runMutation(internal.aiTown.llmHealth.recordFailure, {
-        worldId: args.worldId,
-      });
-      // Abort without sending a garbage message.
-      await ctx.runMutation(internal.aiTown.agent.agentAbortOperation, {
-        worldId: args.worldId,
-        conversationId: args.conversationId,
-        agentId: args.agentId,
-        operationId: args.operationId,
-      });
+      const msg = e.message ?? String(e);
+      console.error(`LLM call failed for ${args.playerId}: ${msg}`);
+      // Only trip breaker on LLM-level failures (rate limits, auth, server errors).
+      // Skip for data issues (missing conversations) or timeouts (capacity, not outage).
+      const isLlmFailure = msg.includes('429') || msg.includes('401') || msg.includes('500')
+        || msg.includes('rate limit') || msg.includes('quota')
+        || msg.includes('timeout') || msg.includes('ECONNREFUSED');
+      if (isLlmFailure) {
+        await ctx.runMutation(internal.aiTown.llmHealth.recordFailure, {
+          worldId: args.worldId,
+        });
+      }
     }
   },
 });

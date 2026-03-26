@@ -241,14 +241,6 @@ export async function continueConversationMessage(
     `If you disagree, say so directly and explain why. If you agree, add something new.`,
   );
 
-  // 30% chance of having web search available -- agent decides if it wants to use it
-  const canSearch = Math.random() < 0.3;
-  if (canSearch) {
-    prompt.push(
-      `You have access to a web_search tool. If you genuinely want to look something up to verify a claim or find a specific detail, you can use it. Most of the time you won't need to.`,
-    );
-  }
-
   const llmMessages: LLMMessage[] = [
     {
       role: 'system',
@@ -266,10 +258,6 @@ export async function continueConversationMessage(
   llmMessages.push({ role: 'user', content: lastPrompt });
 
   const stop = stopWords(otherPlayer.name, player.name);
-  if (canSearch) {
-    const content = await chatMaybeWithTools(ctx, llmMessages, 300, stop);
-    return trimContentPrefx(content, lastPrompt);
-  }
   const { content } = await chatCompletion({
     messages: llmMessages,
     max_tokens: 300,
