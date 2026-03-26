@@ -476,7 +476,8 @@ export const queryPromptData = internalQuery({
         )
         .first();
       if (!lastConversation) {
-        throw new Error(`Conversation ${lastTogether.conversationId} not found`);
+        // Conversation may have been vacuumed or wiped -- treat as no history.
+        console.warn(`Conversation ${lastTogether.conversationId} not found (likely vacuumed)`);
       }
     }
     return {

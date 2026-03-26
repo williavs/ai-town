@@ -5,9 +5,9 @@ import { internalMutation, internalQuery } from '../_generated/server';
 // When free-tier providers are exhausted, pause all agent AI activity
 // to let rate limits cool down. Prevents garbage 2-message conversations.
 
-const FAILURE_THRESHOLD = 2; // Trip after 2 consecutive failures
-const BASE_COOLDOWN_MS = 5 * 60 * 1000; // 5 minute base
-const MAX_COOLDOWN_MS = 30 * 60 * 1000; // 30 minute cap
+const FAILURE_THRESHOLD = 6; // Trip after 6 consecutive failures (tolerates bursty timeouts)
+const BASE_COOLDOWN_MS = 1 * 60 * 1000; // 1 minute base
+const MAX_COOLDOWN_MS = 5 * 60 * 1000; // 5 minute cap
 
 function getCooldown(tripCount: number): number {
   // Exponential backoff: 5min, 10min, 20min, 30min (cap)

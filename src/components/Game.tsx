@@ -48,8 +48,7 @@ export default function Game({ embed }: { embed?: boolean }) {
       <div className={`mx-auto w-full max-w grid grid-rows-[200px_1fr] lg:grid-rows-[1fr] ${embed ? 'lg:grid-cols-[auto_1fr] h-full' : 'lg:grid-cols-[1fr_auto] max-w-[1400px] game-frame'} lg:grow min-h-[480px]`}>
         {/* Details panel - left in embed, right in standalone */}
         <div
-          className={`flex flex-col overflow-y-auto shrink-0 lg:w-80 xl:pr-0 bg-brown-800 text-brown-100 ${embed ? 'order-first border-b-8 sm:border-b-0 sm:border-r-8 border-brown-900' : 'border-t-8 sm:border-t-0 sm:border-l-8 border-brown-900'}`}
-          ref={scrollViewRef}
+          className={`flex flex-col overflow-hidden shrink-0 lg:w-80 xl:pr-0 bg-brown-800 text-brown-100 ${embed ? 'order-first border-b-8 sm:border-b-0 sm:border-r-8 border-brown-900' : 'border-t-8 sm:border-t-0 sm:border-l-8 border-brown-900'}`}
         >
           {/* Sidebar toggle */}
           <div className="flex border-b border-brown-700 shrink-0">
@@ -78,7 +77,7 @@ export default function Game({ embed }: { embed?: boolean }) {
           {sidebarMode === 'conversations' ? (
             <ConversationExplorer worldId={worldId} />
           ) : (
-            <div className="px-3 py-4 sm:px-4">
+            <div className="flex-1 overflow-y-auto px-3 py-4 sm:px-4" ref={scrollViewRef}>
               <PlayerDetails
                 worldId={worldId}
                 engineId={engineId}
